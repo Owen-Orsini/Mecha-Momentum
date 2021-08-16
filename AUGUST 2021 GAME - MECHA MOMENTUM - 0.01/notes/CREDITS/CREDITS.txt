@@ -1,0 +1,25 @@
+GameMaker Studio 2: Rope Swing Tutorial
+
+Title:	GameMaker Studio 2: Tile Collisions
+Author:	Shaun Spalding
+Format: Video Tutorial
+Link:	https://www.youtube.com/watch?v=UyKdQQ3UR_0
+Usage:	outline of tile collision code
+
+Title: Fractional Collisions / Pixel Perfect
+Author: Shaun Spalding
+Format: Pastebin
+Link: https://pastebin.com/bzEK3sre
+Usage: Fraction handling code for collisions
+
+Title: 5 Useful Scripts for GameMaker Studio 2 (and 1!)
+Author: Shaun Spalding
+Format: Video
+Link: https://youtu.be/2FroAhEsuE8
+Usage: the approach script
+
+Title: GameMaker Studio 2: Rope Swing Tutorial
+Author: Shaun Spalding
+Format: Video Tutorial
+Link: https://www.youtube.com/watch?v=2prKyETuTaA
+Usage: Player State Machine, outline of grapple code
