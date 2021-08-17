@@ -1,194 +1,216 @@
-/// @description Insert description here
-// You can write your code in this editor
-var j_input_ = INPUT_JUMP;
-var x_input_ = INPUT_RIGHT - INPUT_LEFT;
-var y_input_ = INPUT_DOWN - INPUT_UP;
-var input_magnitude_ = (x_input_ != 0) or (y_input_ != 0)
-var bbox_side_;
+#region info
+/*
+This physics system uses a variation of the semi implicit euler integration:
 
-var h_friction_ = 0;
+	Velocity n+1 = velocity n + (acceleration x frame time)
+	position n+1 = position n + (velocity n+1 x frame time)
 
-var _dir = point_direction(0, 0, x_input_, y_input_);
+or put into code:
 
+	velocity = velocity + (acceleration * frame_time);
+	position = position + (velocity * frame_time);
 
-
-// State Machine
-switch(state_)
-{
-	case player_state_.normal:
-	{
-		// if jump input is pressed, apply thrust to vertical speed
-		if(j_input_ == true){
-			vsp_ -= thrust_acc_;
-		}
-		
-		if(grounded_ == true){
-			hsp_ += lengthdir_x(input_magnitude_ * walk_acc_, _dir);
-		}else{
-			hsp_ += lengthdir_x(input_magnitude_ * air_acc_, _dir);
-			vsp_ += lengthdir_y(input_magnitude_ * air_acc_, _dir);
-		}
-		if(x_input_ == 0){
-			if(grounded_ == true){
-				h_friction_ = global.h_fric_ground_;
-			}else{
-				h_friction_ = global.h_fric_air_;
-			}
-				hsp_ = approach(hsp_, 0, h_friction_);
+Things to note:
+	all accounting for frame time is done during integration, values should not be scaled to frame time beforehand except:
+	- predictive calculations, such as collision checking
 	
-	}
-		
-		if(mouse_check_button_pressed(mb_left) == true){
-			grapple_x = mouse_x;
-			grapple_y = mouse_y;
-			rope_x = x + sprite_width/2;
-			rope_y = y + sprite_height/2;
-			rope_angle_vel_ = 0;
-			rope_angle_ = point_direction(grapple_x, grapple_y, rope_x, rope_y);
-			rope_length_ = point_distance(grapple_x, grapple_y, rope_x, rope_y);
-			state_ = player_state_.swing;
-		
-		}
+	When you scale a value to frame time, you are essentially changing how much time the value represents
 	
-	}break;
-	case player_state_.swing:
-	{
+	For example:
+		an acceleration value of 5 implies that this value actually means 5 units per second per second.
+		This would be perfect if the game ran at 1 frame per second, but it does not, it runs at (around) 60 frames per second
+		If we integrated this value every frame without scaling it, the game would run (around) 60 times faster than it should
 		
-
-		var _rope_angle_acc = -0.2 *  dcos(rope_angle_);
-		rope_angle_vel_ += _rope_angle_acc;
-		rope_angle_ += rope_angle_vel_;
-		rope_angle_vel_ *= 0.99;
-		rope_x = grapple_x + lengthdir_x(rope_length_, rope_angle_);
-		rope_y = grapple_y + lengthdir_y(rope_length_, rope_angle_);
-		
-		hsp_ = rope_x - x + sprite_width/2;
-		vsp_ = rope_y - y + sprite_height/2;
-		
-		if(INPUT_JUMP == true){
-			state_ = player_state_.normal;
+		So, we scale it to the actual time between frames, instead of just one second
+		At 60 FPS, the time between frames is 0.0166 seconds.
+		So, 5 units per second per second would become:
+			0.0833 units per 0.0166 seconds per 0.0166 seconds
 			
+		When this scaled value is integrated 60 times over 1 second, 
+		it ends up having the same effect as integrating the original value 1 time over the course of 1 second
 		
-		}
-		
-		
-		
-	}break;
-	case player_state_.paused:
-	{
-		
+*/
+
+//Semi Implicit Euler
+	//velocity += acceleration * dt;
+	//position += velocity * dt;
+
+//Acceleration is the rate of change in velocity over time
+	//	delta_velocity/delta_time = acceleration = force/mass
+	//	dv/dt = a = f/m
 	
-	}break;
+//Velocity is the rate of change in position over time
+	//	delta_position/delta_time = velocity
+	//	dx/dt = v
+
+//Velocity_n+1 = velocity_n + (acceleration_n * dt)
 
 
 
-}
+/*
+	Velocity and Acceleration are measures of change per second.
+	So, when doing calculations, they must be divided by the fps to get the change for just one frame
+*/
 
-// if there is no x input, apply appropriate friction to horizontal speed
+
+#endregion
+
+#region housekeeping
+
+//Reset acceleration
+acc_.set(0, 0);
+
+var _vel_sign = new Vector(0, 0);
+var _pos_sign = new Vector(0, 0);
 
 
 
 
-if(grounded_ != true and j_input_ != true){
-	vsp_ = vsp_ + global.grav_;
-}
 
-// if grounded, clamp horizontal speed to walk speed
-if(grounded_ == true){
-	hsp_ = clamp(hsp_, -walk_spd_, walk_spd_);
 
-}
-// if not grounded, clamp horizontal speed to air speed
-if(grounded_ != true){
-	
-	hsp_ = clamp(hsp_, -air_spd_, air_spd_);
-	
+#endregion
+#region Movement
 
-}
-#region Fraction Handling
+input_dir_.set(INPUT_RIGHT - INPUT_LEFT, INPUT_DOWN - INPUT_UP);
+acc_ = acc_.add(input_dir_.mult_real(30));
+//acc_ = acc_.add_real(0, grav_);
+#endregion
 
-// horizontal and vertical speed
-// hsp_/vsp_:	Horizontal/Vertical Speed
-// hsp_whole_/vsp_whole_:	Whole number component of Horizontal/Vertical Speed
-// hsp_frac_/vsp_frac_:	Fractional Component of Horizontal/Vertical Speed
 
-hsp_round_ = hsp_ + hsp_frac_;
-hsp_frac_ = hsp_round_ - floor(abs(hsp_round_)) * sign(hsp_round_);
-hsp_round_ = hsp_round_ - hsp_frac_;
 
-vsp_round_ = vsp_ + vsp_frac_;
-vsp_frac_ = vsp_round_ - floor(abs(vsp_round_)) * sign(vsp_round_);
-vsp_round_ = vsp_round_ - vsp_frac_;
+
+
+#region fraction handling
+
+// Update int & frac based on original
+
+
+// Update original based on frac & int
+
 
 #endregion
 
 
-#region Grounded check
+#region Collision
 
-// Check if grounded
-bbox_side_ = bbox_bottom;
-if(tilemap_get_at_pixel(tilemap_, bbox_left, bbox_side_ + 1)
-or tilemap_get_at_pixel(tilemap_, x + sprite_width/2, bbox_side_ + 1)
-or tilemap_get_at_pixel(tilemap_, bbox_right, bbox_side_ + 1)){
-	grounded_ = true;
-}else{
-	grounded_ = false;
-}
+var _bbox_side = 0;
 
-#endregion
+var _wall_dist = 0;
 
-#region Collsion
+get_pos_delta();
 
-// Horizontal Tile Collision
-
-if(hsp_ > 0)
+if(pos_delta_._x > 0)
 {
-	bbox_side_ = bbox_right;
-}else{
-	bbox_side_ = bbox_left;
+	_bbox_side = bbox_right;
+}else if(pos_delta_._x < 0){
+	_bbox_side = bbox_left;
 }
 
 // Checks the top, bottom, and center points of the bounding box in the direction the player is moving for collisions
-if(tilemap_get_at_pixel(tilemap_, bbox_side_ + hsp_round_, bbox_top)
-or tilemap_get_at_pixel(tilemap_, bbox_side_ + hsp_round_, y + sprite_height/2)
-or tilemap_get_at_pixel(tilemap_, bbox_side_ + hsp_round_, bbox_bottom))
+if(tilemap_get_at_pixel(tilemap_, _bbox_side + pos_delta_._x, bbox_top)
+or tilemap_get_at_pixel(tilemap_, _bbox_side + pos_delta_._x, y + sprite_height/2)
+or tilemap_get_at_pixel(tilemap_, _bbox_side + pos_delta_._x, bbox_bottom))
 {
-		if(hsp_round_ > 0)
-		{
-			hsp_round_ = hsp_round_ - ((bbox_side_ + hsp_round_) mod 32) - 1;
-		}else if(hsp_round_ < 0){
-			hsp_round_ = hsp_round_ - ((bbox_side_ + hsp_round_) mod 32) + 32;
-		}
-		hsp_ = hsp_round_;
+		var _projected_pos = _bbox_side + pos_delta_._x;
+		
+		var _wall_location = (_projected_pos + 16) / 32;
+			_wall_location = floor(_wall_location) * 32;
+		
+		
+			
+		if(pos_delta_._x > 0){
+			wall_dist_ = _wall_location - _projected_pos - 1;
+			}
+		if(pos_delta_._x < 0){
+			wall_dist_ = _wall_location - _projected_pos;
+			}
+		
+		//vel_._x -= wall_dist_ / global.f_time_;
+		
+		show_debug_message("Wall Location: \t" + string(_wall_location));
+		show_debug_message("Projected Bbox location: \t" + string(_projected_pos));
+		
+
+		show_debug_message("Wall Distance: \t" + string(wall_dist_));
+		
+		
+		
+
+	// Set X acceleration to 0, then update int & frac values
+	acc_._x = 0;
+	vel_._x = 0;
 }
 
-// Vertical Tile Collision
 
-if(vsp_round_ > 0){
-	bbox_side_ = bbox_bottom;
-}else{
-	bbox_side_ = bbox_top;
-}
-
-// Checks the left, center, and bottom points of the bounding box in the direction the player is moving for collisions
-if(tilemap_get_at_pixel(tilemap_, bbox_left, bbox_side_ + vsp_round_)
-or tilemap_get_at_pixel(tilemap_, x + sprite_width/2, bbox_side_ + vsp_round_)
-or tilemap_get_at_pixel(tilemap_, bbox_right, bbox_side_ + vsp_round_))
-{
-		if(vsp_round_ > 0)
-		{
-			vsp_round_ = vsp_round_ - ((bbox_side_ + vsp_round_) mod 32) - 1;
-		}else if(vsp_round_ < 0){
-			vsp_round_ = vsp_round_ - ((bbox_side_ + vsp_round_) mod 32) + 32;
-		}
-		vsp_ = vsp_round_;
-}
 
 
 #endregion
-#region Apply Movement
-x = x + hsp_round_;
-y = y + vsp_round_;
+
+			
+// reset acceleration
+
+			
+// calculate acceleration
+//acc_ = acc_.add(force_.divide(mass_));
+
+
+
+#region integration
+
+// velocity = velocity + (acceleration * frame time)
+vel_ = vel_.add(acc_.mult_real(global.f_time_));
+
+// position = position + (velocity * frame time)
+vel_scaled_ = vel_.mult_real(global.f_time_);
+pos_ = pos_.add(vel_scaled_);
+
+//Position Fraction Handling
+_pos_sign = pos_.v_sign();
+pos_int_ = pos_.v_abs().v_floor().mult(_pos_sign);
+pos_frac_ = pos_.sub(pos_int_);
+
+
+// update position
+x = pos_int_._x;
+y = pos_int_._y;
+
+#endregion 
+
+#region testing
+// Test 1
+/*
+if(t <= 1)
+{
+	show_debug_message("Timestep:\t" + string(t));
+	acc_.debug_print("Acceleration");
+	vel_.debug_print("Velocity");
+	pos_.debug_print("Position");
+	show_debug_message("Target Frame Time:\t" + string(global.target_f_time_));
+	show_debug_message("Real Frame Time:\t" + string(global.f_time_));
+	show_debug_message("Delta Multiplier:\t" + string(global.delta_multiplier_));
+
+	switch (mode_)
+	{
+		case phy_mode.pre_scale:
+	
+		acc_.set(5*global.target_f_time_, 0)
+	
+		vel_ = vel_.add(acc_.mult(global.delta_multiplier_));
+		pos_ = pos_.add(vel_.mult(global.delta_multiplier_));
+	
+		break;
+	
+		case phy_mode.int_scale:
+		acc_.set(5, 0)
+	
+		vel_ = vel_.add(acc_.mult(global.f_time_));
+		pos_ = pos_.add(vel_.mult(global.f_time_));
+	
+		break;
+	}
+	x = pos_._x;
+	y = pos_._y;
+	t += global.f_time_;
+}
+*/
 #endregion
-
-

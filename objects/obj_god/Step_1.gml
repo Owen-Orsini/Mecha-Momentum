@@ -17,7 +17,7 @@ if(tester_created == false){
 		}break;
 		case test_mode.phys_sim:
 		{
-			instance_create_layer(room_width/2, room_height/2, "Instances", obj_player_phys);
+			instance_create_layer(room_width/2, room_height/2, "Instances", obj_player);
 		}break;
 	}
 	tester_created = true;
